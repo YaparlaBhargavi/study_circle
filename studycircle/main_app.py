@@ -398,33 +398,44 @@ def get_connection():
     )
 
 # --- User Functions ---
+# Refactored register_user function in main_app.py
+
 def register_user(name, email, password):
-    """Registers a new user in the database."""
+    """Registers a new user using the SQLAlchemy connection."""
+    # The text() function prepares the SQL string for SQLAlchemy execution.
+    sql = text("INSERT INTO users (name, email, password) VALUES (:name, :email, :password)")
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (name, email, password) VALUES (%s, %s, %s)", (name, email, password))
-        conn.commit()
-    except mysql.connector.Error as err:
-        st.error(f"Database error: {err}")
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            conn.close()
+        # Use conn.execute() from auth_db.py
+        conn.execute(sql, {"name": name, "email": email, "password": password})
+        conn.commit() # Commit the transaction
+        st.success(f"✅ User {name} successfully registered!")
+    except Exception as e:
+        # The unique constraint on 'email' will cause an error if the user exists
+        if "Duplicate entry" in str(e):
+             st.error("That email is already registered. Please log in.")
+        else:
+            st.error(f"Database error during registration: {e}")
+
+# Refactored authenticate_user function in main_app.py
 
 def authenticate_user(email, password):
-    """Authenticates a user and returns their data."""
+    """Authenticates a user and returns their data using the SQLAlchemy connection."""
+    # WARNING: Passwords should be hashed, but matching the current non-hashed logic:
+    sql = text("SELECT id, name, email FROM users WHERE email = :email AND password = :password")
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM users WHERE email = %s AND password = %s", (email, password))
-        return cursor.fetchone()
-    except mysql.connector.Error as err:
-        st.error(f"Database error: {err}")
+        # conn.execute() returns a CursorResult object
+        result = conn.execute(sql, {"email": email, "password": password})
+        user_data = result.fetchone()
+        
+        if user_data:
+            # Convert SQLAlchemy tuple result to a dictionary
+            keys = result.keys()
+            return dict(zip(keys, user_data))
         return None
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            conn.close()
-
+    except Exception as e:
+        st.error(f"Database error during authentication: {e}")
+        return None
+        
 def get_subjects():
     """Fetches all available subjects from the database."""
     try:
@@ -1179,4 +1190,5 @@ def main():
         st.rerun()
 
 if __name__ == '__main__':
+
     main()
