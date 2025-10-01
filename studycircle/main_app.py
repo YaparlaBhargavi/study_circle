@@ -1,11 +1,12 @@
 import streamlit as st
-import mysql.connector
 import pandas as pd
 import plotly.express as px
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from datetime import datetime, timedelta
 import os
+from auth_db import conn           # Imports the secure connection object
+from sqlalchemy import text
 
 # NEW IMPORTS FOR SENDGRID
 import configparser
@@ -385,54 +386,52 @@ def apply_custom_css():
 
         </style>
     """, unsafe_allow_html=True)
-    
-# --- DB Connection (Using local credentials for now) ---
-def get_connection():
-    """Establishes a connection to the MySQL database."""
-    # NOTE: Your auth_db.py uses st.secrets, but for local connection in the main file:
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="cseds@32",
-        database="circle"
-    )
+
 
 # --- User Functions ---
 # Refactored register_user function in main_app.py
 
 def register_user(name, email, password):
-    """Registers a new user using the SQLAlchemy connection."""
+    """Registers a new user in the database using the secure SQLAlchemy connection."""
+    
     # The text() function prepares the SQL string for SQLAlchemy execution.
     sql = text("INSERT INTO users (name, email, password) VALUES (:name, :email, :password)")
+    
     try:
         # Use conn.execute() from auth_db.py
         conn.execute(sql, {"name": name, "email": email, "password": password})
-        conn.commit() # Commit the transaction
+        conn.commit() # Commit the transaction to save changes
         st.success(f"✅ User {name} successfully registered!")
+        
     except Exception as e:
-        # The unique constraint on 'email' will cause an error if the user exists
+        # Handle the error if the unique email already exists
         if "Duplicate entry" in str(e):
              st.error("That email is already registered. Please log in.")
         else:
             st.error(f"Database error during registration: {e}")
 
-# Refactored authenticate_user function in main_app.py
-
 def authenticate_user(email, password):
-    """Authenticates a user and returns their data using the SQLAlchemy connection."""
-    # WARNING: Passwords should be hashed, but matching the current non-hashed logic:
+    """Authenticates a user and returns their data using the secure SQLAlchemy connection."""
+    
+    # ⚠️ WARNING: Your database stores passwords unhashed. This is insecure.
+    # The 'text()' function allows us to execute the raw SQL with parameters.
     sql = text("SELECT id, name, email FROM users WHERE email = :email AND password = :password")
+    
     try:
-        # conn.execute() returns a CursorResult object
+        # Use conn.execute() from auth_db, passing parameters securely
         result = conn.execute(sql, {"email": email, "password": password})
+        
+        # result.fetchone() gets the first matching row (or None)
         user_data = result.fetchone()
         
         if user_data:
-            # Convert SQLAlchemy tuple result to a dictionary
+            # Convert SQLAlchemy tuple result to a dictionary for easy access in st.session_state
             keys = result.keys()
             return dict(zip(keys, user_data))
         return None
+        
     except Exception as e:
+        # Catch any database errors (like permission issues, if still present)
         st.error(f"Database error during authentication: {e}")
         return None
         
@@ -1192,3 +1191,4 @@ def main():
 if __name__ == '__main__':
 
     main()
+
